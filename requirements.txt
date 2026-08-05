@@ -1,0 +1,10 @@
+streamlit
+pandas
+gspread
+google-auth
+google-api-python-client
+audio-recorder-streamlit
+google-generativeai
+tenacity
+gtts
+pytz
