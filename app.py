@@ -213,7 +213,7 @@ def save_result_to_sheet(spreadsheet_name, target_class, result_row):
     worksheet.append_row(result_row)
 
 # -------------------------------------------------------------
-# Gemini API 評価 (gemini-3.5-flash 統一 & エラーハンドリング)
+# Gemini API 評価 (gemini-3.5-flash-lite 統一 & エラーハンドリング)
 # -------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
@@ -239,8 +239,8 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         }}
         """
         
-        # モデルを gemini-3.5-flash に統一
-        model = genai.GenerativeModel("gemini-3.5-flash")
+        # モデルを gemini-3.5-flash-lite に統一
+        model = genai.GenerativeModel("gemini-3.5-flash-lite")
         response = model.generate_content([audio_file, prompt])
         
         try:
