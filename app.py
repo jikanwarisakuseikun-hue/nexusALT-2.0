@@ -171,7 +171,6 @@ def upload_audio_to_drive(file_path, file_name):
         file_metadata = {'name': file_name, 'parents': [folder_id]}
         media = MediaFileUpload(file_path, mimetype='audio/wav', resumable=True)
         
-        # 共有ドライブをサポートするパラメータを追加
         file = service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -416,6 +415,15 @@ def main():
                                 audio_url = upload_audio_to_drive(wav_path, file_name)
 
                                 api_key_to_use = st.session_state.get("gemini_api_key", SECRETS["default_gemini_api_key"])
+                                
+                                # 🔍 安全なキー判定の表示（文字列を出さずに誰のキーかを確認）
+                                current_user_id = st.session_state.get("user_id", "unknown")
+                                teacher_keys = SECRETS.get("teacher_api_keys", {})
+                                if current_user_id in teacher_keys and api_key_to_use == teacher_keys[current_user_id]:
+                                    st.info(f"🔑 キー判定: **{current_user_id} の個別APIキー** を使用中")
+                                else:
+                                    st.info("🔑 キー判定: **Default (デフォルト) のAPIキー** を使用中")
+
                                 transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
 
                                 jst = pytz.timezone('Asia/Tokyo')
