@@ -281,7 +281,7 @@ def main():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.title("🔒 中学校英語スピーキングテスト ログイン")
+        st.title("🔒 Nexus English 2.0 ログイン")
         with st.form("login_form"):
             input_id = st.text_input("ログインID")
             input_pw = st.text_input("パスワード", type="password")
