@@ -114,8 +114,7 @@ def authenticate_user(input_id, input_pw):
                         "assigned_class": u_info["assigned_class"],
                         "role": u_info.get("role", "student")
                     }
-        except Exception as e:
-            # 個別学校のスプレッドシート読み込みエラーはスキップせずログ等に影響させない
+        except Exception:
             continue
             
     return {"authenticated": False}
@@ -168,15 +167,19 @@ def upload_audio_to_drive(file_path, file_name):
     service = get_drive_service()
     folder_id = SECRETS["drive_folder_id"]
     
-    file_metadata = {'name': file_name, 'parents': [folder_id]}
-    media = MediaFileUpload(file_path, mimetype='audio/wav', resumable=True)
-    file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-    
     try:
-        service.permissions().create(fileId=file.get('id'), body={'role': 'reader', 'type': 'anyone'}).execute()
-    except Exception:
-        pass
-    return file.get('webViewLink')
+        file_metadata = {'name': file_name, 'parents': [folder_id]}
+        media = MediaFileUpload(file_path, mimetype='audio/wav', resumable=True)
+        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        
+        try:
+            service.permissions().create(fileId=file.get('id'), body={'role': 'reader', 'type': 'anyone'}).execute()
+        except Exception:
+            pass
+        return file.get('webViewLink')
+    except Exception as e:
+        st.error(f"【Googleドライブ アップロードエラー】詳細: {e}")
+        raise e
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def save_result_to_sheet(spreadsheet_name, target_class, result_row):
