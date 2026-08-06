@@ -17,7 +17,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 # ページ設定
 st.set_page_config(
-    page_title="中学校英語スピーキングテスト",
+    page_title="Nexus English 2.0",
     page_icon="🎤",
     layout="centered"
 )
@@ -250,7 +250,7 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         """
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=[audio_file, prompt]
         )
         
@@ -335,7 +335,7 @@ def main():
 
     # 🎙️ 生徒用画面
     else:
-        st.title("🎤 中学校英語スピーキングテスト 受験画面")
+        st.title("🎤 Nexus English 2.0 受験画面")
         
         my_class = st.session_state.get("assigned_class", "2-1")
         all_config = load_config_from_sheet(ss_name)
