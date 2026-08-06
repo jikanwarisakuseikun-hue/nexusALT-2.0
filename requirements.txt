@@ -8,3 +8,4 @@ gtts
 pytz
 tenacity
 google-genai
+streamlit-mic-recorder
