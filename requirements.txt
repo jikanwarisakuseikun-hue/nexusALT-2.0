@@ -4,7 +4,7 @@ gspread
 google-auth
 google-api-python-client
 audio-recorder-streamlit
-google-generativeai
-tenacity
 gtts
 pytz
+tenacity
+google-generativeai>=0.8.3
