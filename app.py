@@ -63,29 +63,40 @@ def get_drive_service():
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def load_master_schools():
     client = get_gspread_client()
-    sheet = client.open(SECRETS["master_spreadsheet_name"])
+    target = SECRETS["master_spreadsheet_name"]
     try:
+        if target.startswith("1") and len(target) > 20:
+            sheet = client.open_by_key(target)
+        else:
+            sheet = client.open(target)
         ws = sheet.worksheet("Schools")
         return pd.DataFrame(ws.get_all_records())
-    except Exception:
-        return pd.DataFrame([
-            {"school_id": "school_a", "school_name": "第一中学校", "spreadsheet_name_or_id": "School_A_DB"}
-        ])
+    except Exception as e:
+        st.error(f"【全体マスタ読み込みエラー】スプレッドシート '{target}' の取得に失敗しました。\n原因: {e}")
+        raise e
 
 # -------------------------------------------------------------
 # ログイン認証
 # -------------------------------------------------------------
 def authenticate_user(input_id, input_pw):
-    master_df = load_master_schools()
+    try:
+        master_df = load_master_schools()
+    except Exception:
+        return {"authenticated": False}
+        
     client = get_gspread_client()
     
     for _, school_row in master_df.iterrows():
         s_id = school_row["school_id"]
         s_name = school_row["school_name"]
-        target_ss = str(school_row["spreadsheet_name_or_id"])
+        target_ss = str(school_row["spreadsheet_name_or_id"]).strip()
         
         try:
-            ss = client.open(target_ss)
+            if target_ss.startswith("1") and len(target_ss) > 20:
+                ss = client.open_by_key(target_ss)
+            else:
+                ss = client.open(target_ss)
+                
             users_ws = ss.worksheet("Users")
             users_df = pd.DataFrame(users_ws.get_all_records())
             
@@ -103,7 +114,8 @@ def authenticate_user(input_id, input_pw):
                         "assigned_class": u_info["assigned_class"],
                         "role": u_info.get("role", "student")
                     }
-        except Exception:
+        except Exception as e:
+            # 個別学校のスプレッドシート読み込みエラーはスキップせずログ等に影響させない
             continue
             
     return {"authenticated": False}
@@ -114,11 +126,15 @@ def authenticate_user(input_id, input_pw):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def load_config_from_sheet(spreadsheet_name):
     client = get_gspread_client()
-    sheet = client.open(spreadsheet_name)
     try:
+        if spreadsheet_name.startswith("1") and len(spreadsheet_name) > 20:
+            sheet = client.open_by_key(spreadsheet_name)
+        else:
+            sheet = client.open(spreadsheet_name)
         config_ws = sheet.worksheet("Config")
         return pd.DataFrame(config_ws.get_all_records())
-    except Exception:
+    except Exception as e:
+        st.warning(f"Configシートが見つからないか読み込めません。デフォルト設定を表示します。 (詳細: {e})")
         default_data = [
             {
                 "target_class": "2-1", "teacher_id": "teacher_1", "num_questions": 2,
@@ -132,7 +148,10 @@ def load_config_from_sheet(spreadsheet_name):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def save_config_to_sheet(spreadsheet_name, df_config):
     client = get_gspread_client()
-    sheet = client.open(spreadsheet_name)
+    if spreadsheet_name.startswith("1") and len(spreadsheet_name) > 20:
+        sheet = client.open_by_key(spreadsheet_name)
+    else:
+        sheet = client.open(spreadsheet_name)
     try:
         config_ws = sheet.worksheet("Config")
     except gspread.exceptions.WorksheetNotFound:
@@ -162,7 +181,10 @@ def upload_audio_to_drive(file_path, file_name):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def save_result_to_sheet(spreadsheet_name, target_class, result_row):
     client = get_gspread_client()
-    spreadsheet = client.open(spreadsheet_name)
+    if spreadsheet_name.startswith("1") and len(spreadsheet_name) > 20:
+        spreadsheet = client.open_by_key(spreadsheet_name)
+    else:
+        spreadsheet = client.open(spreadsheet_name)
     sheet_title = str(target_class).strip()
     
     try:
@@ -256,7 +278,7 @@ def main():
                     st.success(f"ログイン成功: {st.session_state.user_name} ({st.session_state.school_name})")
                     st.rerun()
                 else:
-                    st.error("IDまたはパスワードが正しくありません。")
+                    st.error("IDまたはパスワードが正しくありません。（スピーキングテストのマスタ設定もご確認ください）")
         return
 
     with st.sidebar:
