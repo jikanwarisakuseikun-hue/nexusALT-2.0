@@ -32,7 +32,7 @@ def get_secrets():
             "drive_folder_id": st.secrets["GOOGLE_DRIVE_FOLDER_ID"],
             "master_spreadsheet_name": st.secrets["MASTER_SPREADSHEET_NAME"],
             "service_account_info": dict(st.secrets["connections"]["gsheets"]),
-            "teacher_api_keys": st.secrets.get("TEACHER_API_KEYS", {})
+            "teacher_api_keys": dict(st.secrets.get("TEACHER_API_KEYS", {}))
         }
     except Exception as e:
         st.error(f"Streamlit Secretsの設定が不足しています: {e}")
@@ -285,22 +285,24 @@ def main():
                     st.session_state.assigned_class = auth_result["assigned_class"]
                     st.session_state.role = auth_result["role"]
                     
-                    # 先生ごとのAPIキー設定とデバッグ判定
+                    # 💡 どのキーがマッチしたか詳細に検証するロジック
                     teacher_keys = SECRETS.get("teacher_api_keys", {})
-                    current_uid = auth_result["user_id"]
+                    current_uid = str(auth_result["user_id"]).strip()
+                    
+                    # ログ・画面確認用
+                    st.write(f"DEBUG: ログインID [{current_uid}] に対する teacher_keys の中身:", teacher_keys)
                     
                     if current_uid in teacher_keys and teacher_keys[current_uid]:
                         st.session_state.gemini_api_key = teacher_keys[current_uid]
-                        st.toast(f"🔑 {current_uid} の個別APIキーを適用しました", icon="✅")
+                        st.success(f"✅ 個別キー適用成功 ({current_uid})")
                     else:
                         st.session_state.gemini_api_key = SECRETS["default_gemini_api_key"]
-                        st.toast("⚠️ 個別キー未検出のため、デフォルトAPIキーを適用します", icon="⚠️")
+                        st.warning(f"⚠️ 個別キーが見つからないためデフォルトを適用します (ID: {current_uid})")
                     
-                    st.success(f"ログイン成功: {st.session_state.user_name} ({st.session_state.school_name})")
-                    time.sleep(1)
+                    time.sleep(2)
                     st.rerun()
                 else:
-                    st.error("IDまたはパスワードが正しくありません。（スピーキングテストのマスタ設定もご確認ください）")
+                    st.error("IDまたはパスワードが正しくありません。")
         return
 
     with st.sidebar:
@@ -425,7 +427,6 @@ def main():
 
                                 api_key_to_use = st.session_state.get("gemini_api_key", SECRETS["default_gemini_api_key"])
                                 
-                                # 🔍 キー判定の安全な表示（どのキーを使用中か画面でお知らせ）
                                 current_uid = st.session_state.get("user_id", "unknown")
                                 teacher_keys = SECRETS.get("teacher_api_keys", {})
                                 if current_uid in teacher_keys and api_key_to_use == teacher_keys[current_uid]:
