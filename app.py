@@ -160,7 +160,7 @@ def save_config_to_sheet(spreadsheet_name, df_config):
     config_ws.update([df_config.columns.values.tolist()] + df_config.values.tolist())
 
 # -------------------------------------------------------------
-# Google Drive アップロード & 結果保存
+# Google Drive アップロード (共有ドライブ対応) & 結果保存
 # -------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def upload_audio_to_drive(file_path, file_name):
@@ -170,10 +170,21 @@ def upload_audio_to_drive(file_path, file_name):
     try:
         file_metadata = {'name': file_name, 'parents': [folder_id]}
         media = MediaFileUpload(file_path, mimetype='audio/wav', resumable=True)
-        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        
+        # 共有ドライブをサポートするパラメータを追加
+        file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
         
         try:
-            service.permissions().create(fileId=file.get('id'), body={'role': 'reader', 'type': 'anyone'}).execute()
+            service.permissions().create(
+                fileId=file.get('id'), 
+                body={'role': 'reader', 'type': 'anyone'},
+                supportsAllDrives=True
+            ).execute()
         except Exception:
             pass
         return file.get('webViewLink')
