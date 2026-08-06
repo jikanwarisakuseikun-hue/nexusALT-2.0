@@ -285,10 +285,19 @@ def main():
                     st.session_state.assigned_class = auth_result["assigned_class"]
                     st.session_state.role = auth_result["role"]
                     
+                    # 先生ごとのAPIキー設定とデバッグ判定
                     teacher_keys = SECRETS.get("teacher_api_keys", {})
-                    st.session_state.gemini_api_key = teacher_keys.get(auth_result["user_id"], SECRETS["default_gemini_api_key"])
+                    current_uid = auth_result["user_id"]
+                    
+                    if current_uid in teacher_keys and teacher_keys[current_uid]:
+                        st.session_state.gemini_api_key = teacher_keys[current_uid]
+                        st.toast(f"🔑 {current_uid} の個別APIキーを適用しました", icon="✅")
+                    else:
+                        st.session_state.gemini_api_key = SECRETS["default_gemini_api_key"]
+                        st.toast("⚠️ 個別キー未検出のため、デフォルトAPIキーを適用します", icon="⚠️")
                     
                     st.success(f"ログイン成功: {st.session_state.user_name} ({st.session_state.school_name})")
+                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error("IDまたはパスワードが正しくありません。（スピーキングテストのマスタ設定もご確認ください）")
@@ -296,7 +305,7 @@ def main():
 
     with st.sidebar:
         st.write(f"学校: **{st.session_state.get('school_name')}**")
-        st.write(f"ユーザー: **{st.session_state.get('user_name')}**")
+        st.write(f"ユーザー: **{st.session_state.get('user_name')}** (`{st.session_state.get('user_id')}`)")
         st.write(f"権限: **{'先生' if st.session_state.get('role') == 'teacher' else '生徒'}**")
         st.markdown("---")
         if st.button("ログアウト"):
@@ -416,11 +425,11 @@ def main():
 
                                 api_key_to_use = st.session_state.get("gemini_api_key", SECRETS["default_gemini_api_key"])
                                 
-                                # 🔍 安全なキー判定の表示（文字列を出さずに誰のキーかを確認）
-                                current_user_id = st.session_state.get("user_id", "unknown")
+                                # 🔍 キー判定の安全な表示（どのキーを使用中か画面でお知らせ）
+                                current_uid = st.session_state.get("user_id", "unknown")
                                 teacher_keys = SECRETS.get("teacher_api_keys", {})
-                                if current_user_id in teacher_keys and api_key_to_use == teacher_keys[current_user_id]:
-                                    st.info(f"🔑 キー判定: **{current_user_id} の個別APIキー** を使用中")
+                                if current_uid in teacher_keys and api_key_to_use == teacher_keys[current_uid]:
+                                    st.info(f"🔑 キー判定: **{current_uid} の個別APIキー** を使用中")
                                 else:
                                     st.info("🔑 キー判定: **Default (デフォルト) のAPIキー** を使用中")
 
