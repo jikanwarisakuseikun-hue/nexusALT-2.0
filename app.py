@@ -160,7 +160,7 @@ def save_config_to_sheet(spreadsheet_name, df_config):
     config_ws.update([df_config.columns.values.tolist()] + df_config.values.tolist())
 
 # -------------------------------------------------------------
-# Google Drive アップロード (共有ドライブ対応) & 結果保存
+# Google Drive アップロード & 結果保存
 # -------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def upload_audio_to_drive(file_path, file_name):
@@ -218,10 +218,7 @@ def save_result_to_sheet(spreadsheet_name, target_class, result_row):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
     try:
-        # 新SDKのClientを初期化 (AQ.キー形式にも完全対応)
         client = genai.Client(api_key=api_key)
-        
-        # 音声ファイルのアップロード
         audio_file = client.files.upload(file=audio_path)
         
         prompt = f"""
@@ -243,7 +240,7 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         """
         
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-2.5-flash',
             contents=[audio_file, prompt]
         )
         
@@ -292,17 +289,7 @@ def main():
                     st.session_state.assigned_class = auth_result["assigned_class"]
                     st.session_state.role = auth_result["role"]
                     
-                    # 先生ごとの個別キー判定
-                    teacher_keys = SECRETS.get("teacher_api_keys", {})
-                    current_uid = str(auth_result["user_id"]).strip()
-                    
-                    if current_uid in teacher_keys and teacher_keys[current_uid]:
-                        st.session_state.gemini_api_key = teacher_keys[current_uid]
-                        st.toast(f"🔑 {current_uid} の個別APIキーを適用しました", icon="✅")
-                    else:
-                        st.session_state.gemini_api_key = SECRETS["default_gemini_api_key"]
-                        st.toast("⚠️ 個別キー未検出のため、デフォルトAPIキーを適用します", icon="⚠️")
-                    
+                    st.toast("ログインしました！", icon="✅")
                     time.sleep(1)
                     st.rerun()
                 else:
@@ -429,14 +416,23 @@ def main():
                                 file_name = f"{s_school}_{s_class}_{s_number}_{s_name}_Q{q_id}.wav"
                                 audio_url = upload_audio_to_drive(wav_path, file_name)
 
-                                api_key_to_use = st.session_state.get("gemini_api_key", SECRETS["default_gemini_api_key"])
-                                
-                                current_uid = st.session_state.get("user_id", "unknown")
+                                # 💡 Configシートの teacher_id に応じたAPIキーの自動選択
+                                api_key_to_use = SECRETS["default_gemini_api_key"]
                                 teacher_keys = SECRETS.get("teacher_api_keys", {})
-                                if current_uid in teacher_keys and api_key_to_use == teacher_keys[current_uid]:
-                                    st.info(f"🔑 キー判定: **{current_uid} の個別APIキー** を使用中")
-                                else:
-                                    st.info("🔑 キー判定: **Default (デフォルト) のAPIキー** を使用中")
+                                
+                                try:
+                                    target_class_row = all_config[all_config["target_class"].astype(str) == str(s_class)]
+                                    if not target_class_row.empty:
+                                        t_id = str(target_class_row.iloc[0].get("teacher_id", "")).strip()
+                                        if t_id in teacher_keys and teacher_keys[t_id]:
+                                            api_key_to_use = teacher_keys[t_id]
+                                            st.info(f"🔑 担当教師 ({t_id}) の個別APIキーを使用します")
+                                        else:
+                                            st.info("🔑 デフォルトのAPIキーを使用します")
+                                    else:
+                                        st.info("🔑 デフォルトのAPIキーを使用します")
+                                except Exception:
+                                    pass
 
                                 transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
 
