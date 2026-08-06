@@ -238,7 +238,7 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
     }}
     """
     
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    model = genai.GenerativeModel("gemini-3.5-flash")
     response = model.generate_content([audio_file, prompt])
     
     try:
