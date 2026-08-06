@@ -213,51 +213,54 @@ def save_result_to_sheet(spreadsheet_name, target_class, result_row):
     worksheet.append_row(result_row)
 
 # -------------------------------------------------------------
-# Gemini API 評価
+# Gemini API 評価 (gemini-3.5-flash 統一 & エラーハンドリング)
 # -------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
-    genai.configure(api_key=api_key)
-    audio_file = genai.upload_file(path=audio_path)
-    
-    prompt = f"""
-    あなたは中学校英語科の厳格かつ親切なAI英語スピーキングテスト採点官です。
-    以下の質問と評価基準に基づいて、生徒の音声を文字起こしし、評価を行ってください。
-
-    【質問】
-    {question_text}
-
-    【評価基準】
-    {criteria}
-
-    以下のJSON形式のみで正確に出力してください（マークダウンのコードブロックは含めない）。
-    {{
-      "transcript": "文字起こしされた英語テキスト",
-      "evaluation": "A または B または C",
-      "advice": "日本語での丁寧なアドバイスと良かった点・改善点"
-    }}
-    """
-    
-    model = genai.GenerativeModel("gemini-3.5-flash")
-    response = model.generate_content([audio_file, prompt])
-    
     try:
-        genai.delete_file(audio_file.name)
-    except Exception:
-        pass
+        genai.configure(api_key=api_key)
+        audio_file = genai.upload_file(path=audio_path)
         
-    text_res = response.text.strip()
-    if text_res.startswith("```json"):
-        text_res = text_res[7:]
-    if text_res.endswith("```"):
-        text_res = text_res[:-3]
-    text_res = text_res.strip()
-    
-    try:
+        prompt = f"""
+        あなたは中学校英語科の厳格かつ親切なAI英語スピーキングテスト採点官です。
+        以下の質問と評価基準に基づいて、生徒の音声を文字起こしし、評価を行ってください。
+
+        【質問】
+        {question_text}
+
+        【評価基準】
+        {criteria}
+
+        以下のJSON形式のみで正確に出力してください（マークダウンのコードブロックは含めない）。
+        {{
+          "transcript": "文字起こしされた英語テキスト",
+          "evaluation": "A または B または C",
+          "advice": "日本語での丁寧なアドバイスと良かった点・改善点"
+        }}
+        """
+        
+        # モデルを gemini-3.5-flash に統一
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = model.generate_content([audio_file, prompt])
+        
+        try:
+            genai.delete_file(audio_file.name)
+        except Exception:
+            pass
+            
+        text_res = response.text.strip()
+        if text_res.startswith("```json"):
+            text_res = text_res[7:]
+        if text_res.endswith("```"):
+            text_res = text_res[:-3]
+        text_res = text_res.strip()
+        
         res_json = json.loads(text_res)
         return res_json.get("transcript", ""), res_json.get("evaluation", "C"), res_json.get("advice", "評価生成エラー")
+        
     except Exception as e:
-        return f"Parse Error: {response.text}", "C", f"解析エラー: {e}"
+        st.error(f"Gemini API通信エラーの詳細: {e}")
+        raise e
 
 # -------------------------------------------------------------
 # メインアプリケーション
@@ -285,21 +288,18 @@ def main():
                     st.session_state.assigned_class = auth_result["assigned_class"]
                     st.session_state.role = auth_result["role"]
                     
-                    # 💡 どのキーがマッチしたか詳細に検証するロジック
+                    # 先生ごとの個別キー判定
                     teacher_keys = SECRETS.get("teacher_api_keys", {})
                     current_uid = str(auth_result["user_id"]).strip()
                     
-                    # ログ・画面確認用
-                    st.write(f"DEBUG: ログインID [{current_uid}] に対する teacher_keys の中身:", teacher_keys)
-                    
                     if current_uid in teacher_keys and teacher_keys[current_uid]:
                         st.session_state.gemini_api_key = teacher_keys[current_uid]
-                        st.success(f"✅ 個別キー適用成功 ({current_uid})")
+                        st.toast(f"🔑 {current_uid} の個別APIキーを適用しました", icon="✅")
                     else:
                         st.session_state.gemini_api_key = SECRETS["default_gemini_api_key"]
-                        st.warning(f"⚠️ 個別キーが見つからないためデフォルトを適用します (ID: {current_uid})")
+                        st.toast("⚠️ 個別キー未検出のため、デフォルトAPIキーを適用します", icon="⚠️")
                     
-                    time.sleep(2)
+                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error("IDまたはパスワードが正しくありません。")
@@ -317,7 +317,7 @@ def main():
     role = st.session_state.get("role", "student")
     ss_name = st.session_state.get("spreadsheet_name")
 
-    # 👨‍🏫 先生用画面（横長Configの編集管理）
+    # 👨‍🏫 先生用画面
     if role == "teacher":
         st.title(f"👨‍🏫 教師ダッシュボード ({st.session_state.get('school_name')})")
         st.markdown("クラスごとの担当教師、問題数 (`num_questions`)、各問題の質問文・評価基準を横長テーブルで編集できます。")
@@ -330,7 +330,7 @@ def main():
                 save_config_to_sheet(ss_name, edited_config_df)
                 st.success("Config設定が正常に更新されました！")
 
-    # 🎙️ 生徒用画面（横長Configから問題数を読み込んで出題）
+    # 🎙️ 生徒用画面
     else:
         st.title("🎤 中学校英語スピーキングテスト 受験画面")
         
