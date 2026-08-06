@@ -11,7 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from audio_recorder_streamlit import audio_recorder
+from streamlit_mic_recorder import mic_recorder  # 🎙️ 波形が出るマイク用
 from google import genai
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -240,7 +240,7 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         """
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=[audio_file, prompt]
         )
         
@@ -375,93 +375,86 @@ def main():
 
             st.progress((current_step) / total_questions, text=f"進捗: 質問 {current_step + 1} / {total_questions}")
             
-            st.markdown(f"### 質問 {current_step + 1} (問題番号: {q_id})")
-            st.info("🔊 以下の英語の質問をよく聞いて、英語で答えてください。")
+            st.markdown(f"### 質問 {current_step + 1}")
+            st.info("🔊 音声をよく聞いて、英語で答えてください。（※質問文は非表示です）")
             
+            # 音声の自動再生（テキストは画面に出さない）
             tts = gTTS(text=str(q_text), lang='en')
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
                 tts.save(tmp_audio.name)
                 tmp_audio_path = tmp_audio.name
                 
-            st.audio(tmp_audio_path, format="audio/mp3", autoplay=False)
-            st.markdown(f"**質問文:** `{q_text}`")
+            st.audio(tmp_audio_path, format="audio/mp3", autoplay=True)
 
-            if f"thinking_done_{current_step}" not in st.session_state:
-                if st.button("▶️ 音声を再生してシンキングタイム(5秒)を開始する", key=f"start_btn_{current_step}"):
-                    with st.spinner("シンキングタイム中... 準備をしてください"):
-                        bar = st.progress(0)
-                        for i in range(5):
-                            time.sleep(1)
-                            bar.progress((i + 1) / 5)
-                    st.session_state[f"thinking_done_{current_step}"] = True
-                    st.rerun()
-            else:
-                st.success("✨ シンキングタイム終了！録音ボタンを押して話してください。")
+            st.markdown("#### 🎙️ 録音エリア（波形表示マイク）")
+            # 波形が出るマイクコンポーネント (streamlit-mic-recorder)
+            audio_info = mic_recorder(
+                start_prompt="🔴 録音開始",
+                stop_prompt="⏹️ 録音終了",
+                just_once=False,
+                use_container_width=True,
+                key=f"mic_{current_step}"
+            )
 
-                st.markdown("#### 🎙️ 録音エリア")
-                audio_bytes = audio_recorder(text="クリックして録音開始/停止", recording_color="#e8b62c", neutral_color="#6aa36f", icon_size="2x")
+            # 音声データが取得できている場合
+            if audio_info and "bytes" in audio_info and audio_info["bytes"]:
+                audio_bytes = audio_info["bytes"]
+                st.audio(audio_bytes, format="audio/wav")
+                
+                if st.button("📤 この音声を送信して次へ進む", key=f"submit_btn_{current_step}", type="primary"):
+                    if not s_name.strip():
+                        st.warning("氏名を入力してください。")
+                    else:
+                        with st.spinner("音声をアップロードし、AI採点中..."):
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as f_wav:
+                                f_wav.write(audio_bytes)
+                                wav_path = f_wav.name
 
-                if audio_bytes:
-                    st.audio(audio_bytes, format="audio/wav")
-                    
-                    if st.button("📤 この音声を送信して次へ進む", key=f"submit_btn_{current_step}"):
-                        if not s_name.strip():
-                            st.warning("氏名を入力してください。")
-                        else:
-                            with st.spinner("音声をアップロードし、AI採点中..."):
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as f_wav:
-                                    f_wav.write(audio_bytes)
-                                    wav_path = f_wav.name
+                            file_name = f"{s_school}_{s_class}_{s_number}_{s_name}_Q{q_id}.wav"
+                            audio_url = upload_audio_to_drive(wav_path, file_name)
 
-                                file_name = f"{s_school}_{s_class}_{s_number}_{s_name}_Q{q_id}.wav"
-                                audio_url = upload_audio_to_drive(wav_path, file_name)
-
-                                # 💡 Configシートの teacher_id に応じたAPIキーの自動選択
-                                api_key_to_use = SECRETS["default_gemini_api_key"]
-                                teacher_keys = SECRETS.get("teacher_api_keys", {})
-                                
-                                try:
-                                    target_class_row = all_config[all_config["target_class"].astype(str) == str(s_class)]
-                                    if not target_class_row.empty:
-                                        t_id = str(target_class_row.iloc[0].get("teacher_id", "")).strip()
-                                        if t_id in teacher_keys and teacher_keys[t_id]:
-                                            api_key_to_use = teacher_keys[t_id]
-                                            st.info(f"🔑 担当教師 ({t_id}) の個別APIキーを使用します")
-                                        else:
-                                            st.info("🔑 デフォルトのAPIキーを使用します")
+                            # 💡 Configシートの teacher_id に応じたAPIキーの自動選択
+                            api_key_to_use = SECRETS["default_gemini_api_key"]
+                            teacher_keys = SECRETS.get("teacher_api_keys", {})
+                            
+                            try:
+                                target_class_row = all_config[all_config["target_class"].astype(str) == str(s_class)]
+                                if not target_class_row.empty:
+                                    t_id = str(target_class_row.iloc[0].get("teacher_id", "")).strip()
+                                    if t_id in teacher_keys and teacher_keys[t_id]:
+                                        api_key_to_use = teacher_keys[t_id]
                                     else:
-                                        st.info("🔑 デフォルトのAPIキーを使用します")
-                                except Exception:
-                                    pass
+                                        pass
+                            except Exception:
+                                pass
 
-                                transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
+                            transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
 
-                                jst = pytz.timezone('Asia/Tokyo')
-                                timestamp = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S')
+                            jst = pytz.timezone('Asia/Tokyo')
+                            timestamp = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S')
 
-                                result_row = [
-                                    timestamp, s_school, s_class, s_number, s_name,
-                                    st.session_state.get("user_id"), q_id, q_text,
-                                    transcript, evaluation, advice, audio_url, 10
-                                ]
-                                save_result_to_sheet(ss_name, s_class, result_row)
+                            result_row = [
+                                timestamp, s_school, s_class, s_number, s_name,
+                                st.session_state.get("user_id"), q_id, q_text,
+                                transcript, evaluation, advice, audio_url, 10
+                            ]
+                            save_result_to_sheet(ss_name, s_class, result_row)
 
-                                st.session_state.test_results.append({
-                                    "question": q_text,
-                                    "transcript": transcript,
-                                    "evaluation": evaluation,
-                                    "advice": advice
-                                })
+                            st.session_state.test_results.append({
+                                "question": q_text,
+                                "transcript": transcript,
+                                "evaluation": evaluation,
+                                "advice": advice
+                            })
 
-                                st.session_state.test_step += 1
-                                st.rerun()
+                            st.session_state.test_step += 1
+                            st.rerun()
         else:
             st.balloons()
             st.success("🎉 すべての質問が終了しました！お疲れ様でした。")
             st.markdown("### 📊 今回のテスト結果サマリー")
             for idx, res in enumerate(st.session_state.test_results):
                 with st.expander(f"質問 {idx + 1} の結果"):
-                    st.write(f"**質問:** {res['question']}")
                     st.write(f"**文字起こし:** {res['transcript']}")
                     st.write(f"**評価:** {res['evaluation']}")
                     st.write(f"**アドバイス:** {res['advice']}")
@@ -469,9 +462,6 @@ def main():
             if st.button("テストをやり直す"):
                 st.session_state.pop("test_step", None)
                 st.session_state.pop("test_results", None)
-                for key in list(st.session_state.keys()):
-                    if key.startswith("thinking_done_"):
-                        del st.session_state[key]
                 st.rerun()
 
     st.markdown("---")
