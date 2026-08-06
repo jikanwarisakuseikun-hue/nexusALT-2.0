@@ -12,7 +12,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from audio_recorder_streamlit import audio_recorder
-import google.generativeai as genai
+from google import genai
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # ページ設定
@@ -213,13 +213,16 @@ def save_result_to_sheet(spreadsheet_name, target_class, result_row):
     worksheet.append_row(result_row)
 
 # -------------------------------------------------------------
-# Gemini API 評価 (gemini-3.5-flash-lite 統一 & エラーハンドリング)
+# Gemini API 評価 (新SDK: google-genai 使用)
 # -------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
     try:
-        genai.configure(api_key=api_key)
-        audio_file = genai.upload_file(path=audio_path)
+        # 新SDKのClientを初期化 (AQ.キー形式にも完全対応)
+        client = genai.Client(api_key=api_key)
+        
+        # 音声ファイルのアップロード
+        audio_file = client.files.upload(file=audio_path)
         
         prompt = f"""
         あなたは中学校英語科の厳格かつ親切なAI英語スピーキングテスト採点官です。
@@ -239,12 +242,13 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         }}
         """
         
-        # モデルを gemini-3.5-flash-lite に統一
-        model = genai.GenerativeModel("gemini-3.5-flash-lite")
-        response = model.generate_content([audio_file, prompt])
+        response = client.models.generate_content(
+            model='gemini-3.5-flash',
+            contents=[audio_file, prompt]
+        )
         
         try:
-            genai.delete_file(audio_file.name)
+            client.files.delete(name=audio_file.name)
         except Exception:
             pass
             
