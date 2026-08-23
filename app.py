@@ -216,7 +216,7 @@ def save_result_to_sheet(spreadsheet_name, target_class, result_row):
         worksheet = spreadsheet.add_worksheet(title=sheet_title, rows="100", cols="15")
         header = [
             "タイムスタンプ(JST)", "学校名", "クラス", "出席番号", "氏名", "ログインID",
-            "問題番号", "質問文", "文字起こし", "評価(A/B/C)", "アドバイス", "音声URL", "解答時間(秒)"
+            "問題番号", "質問文", "質問文を見たか", "文字起こし", "評価(A/B/C)", "アドバイス", "音声URL", "解答時間(秒)"
         ]
         worksheet.append_row(header)
         
@@ -307,18 +307,40 @@ def main():
                     st.error("IDまたはパスワードが正しくありません。")
         return
 
+    role = st.session_state.get("role", "student")
+    ss_name = st.session_state.get("spreadsheet_name")
+
+    # 生徒用のテスト進行状態は、サイドバーからも参照できるよう先に初期化しておく
+    if role != "teacher":
+        if "test_step" not in st.session_state:
+            st.session_state.test_step = 0
+        if "test_results" not in st.session_state:
+            st.session_state.test_results = []
+        if "question_viewed" not in st.session_state:
+            st.session_state.question_viewed = {}  # {question_index: True/False}
+
     with st.sidebar:
         st.write(f"学校: **{st.session_state.get('school_name')}**")
         st.write(f"ユーザー: **{st.session_state.get('user_name')}** (`{st.session_state.get('user_id')}`)")
         st.write(f"出席番号: **{st.session_state.get('attendance_number')}番**")
         st.write(f"権限: **{'先生' if st.session_state.get('role') == 'teacher' else '生徒'}**")
+
+        # 🆕 生徒向け：質問文を表示するかどうかをサイドバーで選択できるようにする
+        if role != "teacher":
+            st.markdown("---")
+            current_step = st.session_state.get("test_step", 0)
+            show_question = st.checkbox(
+                "📄 質問文を表示する",
+                key=f"show_question_{current_step}",
+                help="オンにすると、この設問の質問文が画面に表示されます。表示したことは記録され、先生に共有されるデータにも残ります。"
+            )
+            if show_question:
+                st.session_state.question_viewed[current_step] = True
+
         st.markdown("---")
         if st.button("ログアウト"):
             st.session_state.clear()
             st.rerun()
-
-    role = st.session_state.get("role", "student")
-    ss_name = st.session_state.get("spreadsheet_name")
 
     # 👨‍🏫 先生用画面
     if role == "teacher":
@@ -371,11 +393,6 @@ def main():
 
         st.info(f"👤 受験者: **{s_class} {s_number}番 {s_name} さん**")
 
-        if "test_step" not in st.session_state:
-            st.session_state.test_step = 0
-        if "test_results" not in st.session_state:
-            st.session_state.test_results = []
-
         total_questions = len(questions_list)
         current_step = st.session_state.test_step
 
@@ -388,7 +405,11 @@ def main():
             st.progress((current_step) / total_questions, text=f"進捗: 質問 {current_step + 1} / {total_questions}")
             
             st.markdown(f"### 質問 {current_step + 1}")
-            st.write("🔊 音声をよく聞いて、英語で答えてください。（※質問文は非表示です）")
+            st.write("🔊 音声をよく聞いて、英語で答えてください。（サイドバーで質問文を表示することもできます）")
+
+            # 🆕 サイドバーのチェックボックスがオンの場合、質問文を画面にも表示する
+            if st.session_state.get(f"show_question_{current_step}", False):
+                st.info(f"📖 質問文: {q_text}")
             
             # 音声の自動再生（テキストは画面に出さない）
             tts = gTTS(text=str(q_text), lang='en')
@@ -442,9 +463,13 @@ def main():
                         jst = pytz.timezone('Asia/Tokyo')
                         timestamp = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S')
 
+                        # 🆕 この設問で質問文を表示したかどうか（サイドバーのチェックボックス由来）
+                        viewed_flag = st.session_state.question_viewed.get(current_step, False)
+                        viewed_text = "はい" if viewed_flag else "いいえ"
+
                         result_row = [
                             timestamp, s_school, s_class, s_number, s_name,
-                            st.session_state.get("user_id"), q_id, q_text,
+                            st.session_state.get("user_id"), q_id, q_text, viewed_text,
                             transcript, evaluation, advice, audio_url, 10
                         ]
                         save_result_to_sheet(ss_name, s_class, result_row)
@@ -453,7 +478,8 @@ def main():
                             "question": q_text,
                             "transcript": transcript,
                             "evaluation": evaluation,
-                            "advice": advice
+                            "advice": advice,
+                            "viewed": viewed_text
                         })
 
                         st.session_state.test_step += 1
@@ -467,10 +493,12 @@ def main():
                     st.write(f"**文字起こし:** {res['transcript']}")
                     st.write(f"**評価:** {res['evaluation']}")
                     st.write(f"**アドバイス:** {res['advice']}")
+                    st.write(f"**質問文を見たか:** {res.get('viewed', 'いいえ')}")
                     
             if st.button("テストをやり直す"):
                 st.session_state.pop("test_step", None)
                 st.session_state.pop("test_results", None)
+                st.session_state.pop("question_viewed", None)
                 st.rerun()
 
     st.markdown("---")
