@@ -341,6 +341,27 @@ def get_api_key_for_class(all_config, target_class):
     return api_key_to_use
 
 # -------------------------------------------------------------
+# 問題読み上げ音声（TTS）のキャッシュ
+#   同じ質問文なら再生成しない。rerunのたびにgTTSへ通信しないようにする。
+#   一時ファイルは読み込み後すぐ削除する。
+# -------------------------------------------------------------
+@st.cache_data(ttl=3600)
+def generate_tts_audio(text: str) -> bytes:
+    tts = gTTS(text=str(text), lang='en')
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
+        tts.save(tmp_audio.name)
+        tmp_path = tmp_audio.name
+    try:
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+    return data
+
+# -------------------------------------------------------------
 # メインアプリケーション
 # -------------------------------------------------------------
 def main():
@@ -492,13 +513,9 @@ def main():
             if st.session_state.get(f"show_question_{current_step}", False):
                 st.info(f"📖 質問文: {q_text}")
 
-            # 音声の自動再生（テキストは画面に出さない）
-            tts = gTTS(text=str(q_text), lang='en')
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_audio:
-                tts.save(tmp_audio.name)
-                tmp_audio_path = tmp_audio.name
-
-            st.audio(tmp_audio_path, format="audio/mp3", autoplay=True)
+            # 音声の自動再生（テキストは画面に出さない。同じ質問文なら再生成しない）
+            tts_bytes = generate_tts_audio(str(q_text))
+            st.audio(tts_bytes, format="audio/mp3", autoplay=True)
 
             # 🆕 回答方法の選択：音声 or 文字
             answer_mode = st.radio(
@@ -532,12 +549,18 @@ def main():
                                 f_wav.write(audio_bytes)
                                 wav_path = f_wav.name
 
-                            file_name = f"{s_school}_{s_class}_{s_number}_{s_name}_Q{q_id}.wav"
-                            audio_url = upload_audio_to_drive(wav_path, file_name)
+                            try:
+                                file_name = f"{s_school}_{s_class}_{s_number}_{s_name}_Q{q_id}.wav"
+                                audio_url = upload_audio_to_drive(wav_path, file_name)
 
-                            api_key_to_use = get_api_key_for_class(all_config, s_class)
+                                api_key_to_use = get_api_key_for_class(all_config, s_class)
 
-                            transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
+                                transcript, evaluation, advice = evaluate_audio_with_gemini(wav_path, str(q_text), str(q_criteria), api_key_to_use)
+                            finally:
+                                try:
+                                    os.remove(wav_path)
+                                except Exception:
+                                    pass
 
                             jst = pytz.timezone('Asia/Tokyo')
                             timestamp = datetime.datetime.now(jst).strftime('%Y-%m-%d %H:%M:%S')
