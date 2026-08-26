@@ -256,7 +256,7 @@ def evaluate_audio_with_gemini(audio_path, question_text, criteria, api_key):
         """
 
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-3.5-flash-lite',
             contents=[audio_file, prompt]
         )
 
@@ -308,7 +308,7 @@ def evaluate_text_with_gemini(text_answer, question_text, criteria, api_key):
         """
 
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-3.5-flash-lite',
             contents=prompt
         )
 
