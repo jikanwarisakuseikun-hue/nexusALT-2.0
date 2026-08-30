@@ -729,36 +729,35 @@ def main():
                     save_roster_to_sheet(ss_name, edited_roster_df)
                     st.success("氏名一覧を更新しました！")
 
-        with tab_pin:
-            st.caption("PINはどこにも保存されておらず、secretsのschool_pepperから毎回その場で計算しています。")
-            class_list_for_pin = get_classes_for_school(ss_name)
+          with tab_pin:
+        st.caption("PINはどこにも保存されておらず、secretsのschool_pepperから毎回その場で計算しています。")
+        class_list_for_pin = get_classes_for_school(ss_name)
 
-            if not class_list_for_pin:
-                st.warning("クラス設定が見つかりません。「🏫 クラス設定」タブでクラスを登録してください。")
+        if not class_list_for_pin:
+            st.warning("クラス設定が見つかりません。「🏫 クラス設定」タブでクラスを登録してください。")
+        else:
+            pin_selected_class = st.selectbox("クラスを選択してください：", class_list_for_pin, key="pin_class_select")
+            pin_class_cfg = get_class_config(ss_name, pin_selected_class)
+            pin_student_count = int(pin_class_cfg.get("student_count", 0))
+
+            talky_sheet_id = st.session_state.get("talky_sheet_id", "")
+            pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")
+
+            if not pepper:
+                st.error("この学校のschool_pepperがsecretsに設定されていません。管理者に設定を依頼してください。")
+            elif pin_student_count == 0:
+                st.warning("このクラスのstudent_countが0です。「🏫 クラス設定」タブで人数を設定してください。")
             else:
-                pin_selected_class = st.selectbox("クラスを選択してください：", class_list_for_pin, key="pin_class_select")
-                pin_class_cfg = get_class_config(ss_name, pin_selected_class)
-                pin_student_count = int(pin_class_cfg.get("student_count", 0))
-                talky_sheet_id = st.session_state.get("talky_sheet_id", "")               # ← 変更
-        　　　　　pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")      # ← 変更
-                # Talky AI 2.0とPINを共通化するため、スプレッドシートIDを鍵にする
-                pepper = st.secrets.get("school_pepper", {}).get(ss_name, "")
-
-                if not pepper:
-                    st.error("この学校のschool_pepperがsecretsに設定されていません。管理者に設定を依頼してください。")
-                elif pin_student_count == 0:
-                    st.warning("このクラスのstudent_countが0です。「🏫 クラス設定」タブで人数を設定してください。")
-                else:
-                    pin_rows = [
-                        {
-                            "出席番号": n,
-                            "氏名": get_student_name(ss_name, pin_selected_class, n),
-                            "PIN": generate_pin(talky_sheet_id, pin_selected_class, n, pepper),   # ← 変更
-                        }
-                        for n in range(1, pin_student_count + 1)
-                    ]
-                    st.dataframe(pd.DataFrame(pin_rows), hide_index=True, use_container_width=True)
-                    st.caption("この一覧を印刷・配布してください。PINは学校・クラス・出席番号ごとに固定です（school_pepperを変更しない限り変わりません）。")
+                pin_rows = [
+                    {
+                        "出席番号": n,
+                        "氏名": get_student_name(ss_name, pin_selected_class, n),
+                        "PIN": generate_pin(talky_sheet_id, pin_selected_class, n, pepper),
+                    }
+                    for n in range(1, pin_student_count + 1)
+                ]
+                st.dataframe(pd.DataFrame(pin_rows), hide_index=True, use_container_width=True)                    
+                st.caption("この一覧を印刷・配布してください。PINは学校・クラス・出席番号ごとに固定です（school_pepperを変更しない限り変わりません）。")
 
     # 🎙️⌨️ 生徒用画面
     else:
