@@ -570,6 +570,7 @@ def main():
         school_row = master_df[master_df["school_name"] == selected_school_name].iloc[0]
         s_id = str(school_row["school_id"])
         target_ss = str(school_row["spreadsheet_name_or_id"]).strip()
+        talky_sheet_id = str(school_row["talky_sheet_id"]).strip()   # ← 追加
 
         login_type = st.radio("ログイン種別を選択してください：", ["生徒", "教職員"], horizontal=True)
 
@@ -608,6 +609,7 @@ def main():
                         st.session_state.school_id = s_id
                         st.session_state.school_name = selected_school_name
                         st.session_state.spreadsheet_name = target_ss
+                        st.session_state.talky_sheet_id = talky_sheet_id   # ← 追加（PIN一覧タブで使う）
                         st.session_state.assigned_class = selected_class
                         st.session_state.attendance_number = selected_number
 
@@ -633,6 +635,7 @@ def main():
                     st.session_state.assigned_class = ""
                     st.session_state.role = auth_result["role"]
                     st.session_state.attendance_number = ""
+                    st.session_state.talky_sheet_id = str(school_row["talky_sheet_id"]).strip()
 
                     st.toast("ログインしました！", icon="✅")
                     time.sleep(1)
@@ -736,6 +739,8 @@ def main():
                 pin_selected_class = st.selectbox("クラスを選択してください：", class_list_for_pin, key="pin_class_select")
                 pin_class_cfg = get_class_config(ss_name, pin_selected_class)
                 pin_student_count = int(pin_class_cfg.get("student_count", 0))
+                talky_sheet_id = st.session_state.get("talky_sheet_id", "")               # ← 変更
+        　　　　　pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")      # ← 変更
                 # Talky AI 2.0とPINを共通化するため、スプレッドシートIDを鍵にする
                 pepper = st.secrets.get("school_pepper", {}).get(ss_name, "")
 
@@ -748,7 +753,7 @@ def main():
                         {
                             "出席番号": n,
                             "氏名": get_student_name(ss_name, pin_selected_class, n),
-                            "PIN": generate_pin(ss_name, pin_selected_class, n, pepper),
+                            "PIN": generate_pin(talky_sheet_id, pin_selected_class, n, pepper),   # ← 変更
                         }
                         for n in range(1, pin_student_count + 1)
                     ]
