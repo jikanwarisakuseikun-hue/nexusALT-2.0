@@ -186,6 +186,9 @@ def save_roster_to_sheet(spreadsheet_name, df_roster):
 #   学校×クラス×出席番号 に対して一意な4桁PINを計算する。
 #   同じ入力からは常に同じPINが再現されるので、事前にリストを
 #   どこかに保存しておく必要がない＝生徒ログイン時のSheets読み取りがゼロになる。
+#
+#   ※ Talky AI 2.0とPINを共通化するため、鍵にはNexus用スプレッドシートIDではなく
+#      「Talky側のスプレッドシートID」（talky_sheet_id）を使う。
 # -------------------------------------------------------------
 def generate_pin(school_id: str, class_name: str, student_number, pepper: str) -> str:
     raw = f"{school_id}:{class_name}:{student_number}:{pepper}"
@@ -570,7 +573,7 @@ def main():
         school_row = master_df[master_df["school_name"] == selected_school_name].iloc[0]
         s_id = str(school_row["school_id"])
         target_ss = str(school_row["spreadsheet_name_or_id"]).strip()
-        talky_sheet_id = str(school_row["talky_sheet_id"]).strip()   # ← 追加
+        talky_sheet_id = str(school_row["talky_sheet_id"]).strip()
 
         login_type = st.radio("ログイン種別を選択してください：", ["生徒", "教職員"], horizontal=True)
 
@@ -597,9 +600,9 @@ def main():
                 if not (selected_class and selected_number and input_pin):
                     st.error("クラス・出席番号・PINをすべて入力してください。")
                 else:
-                    # Talky AI 2.0とPINを共通化するため、スプレッドシートIDを鍵にする
-                    pepper = st.secrets.get("school_pepper", {}).get(target_ss, "")
-                    expected_pin = generate_pin(target_ss, selected_class, selected_number, pepper)
+                    # Talky AI 2.0とPINを共通化するため、Talky側のスプレッドシートIDを鍵にする
+                    pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")
+                    expected_pin = generate_pin(talky_sheet_id, selected_class, selected_number, pepper)
 
                     if pepper and str(input_pin).strip() == expected_pin:
                         st.session_state.authenticated = True
@@ -609,7 +612,7 @@ def main():
                         st.session_state.school_id = s_id
                         st.session_state.school_name = selected_school_name
                         st.session_state.spreadsheet_name = target_ss
-                        st.session_state.talky_sheet_id = talky_sheet_id   # ← 追加（PIN一覧タブで使う）
+                        st.session_state.talky_sheet_id = talky_sheet_id
                         st.session_state.assigned_class = selected_class
                         st.session_state.attendance_number = selected_number
 
@@ -635,7 +638,7 @@ def main():
                     st.session_state.assigned_class = ""
                     st.session_state.role = auth_result["role"]
                     st.session_state.attendance_number = ""
-                    st.session_state.talky_sheet_id = str(school_row["talky_sheet_id"]).strip()
+                    st.session_state.talky_sheet_id = talky_sheet_id
 
                     st.toast("ログインしました！", icon="✅")
                     time.sleep(1)
@@ -729,35 +732,35 @@ def main():
                     save_roster_to_sheet(ss_name, edited_roster_df)
                     st.success("氏名一覧を更新しました！")
 
-          with tab_pin:
-        st.caption("PINはどこにも保存されておらず、secretsのschool_pepperから毎回その場で計算しています。")
-        class_list_for_pin = get_classes_for_school(ss_name)
+        with tab_pin:
+            st.caption("PINはどこにも保存されておらず、secretsのschool_pepperから毎回その場で計算しています。")
+            class_list_for_pin = get_classes_for_school(ss_name)
 
-        if not class_list_for_pin:
-            st.warning("クラス設定が見つかりません。「🏫 クラス設定」タブでクラスを登録してください。")
-        else:
-            pin_selected_class = st.selectbox("クラスを選択してください：", class_list_for_pin, key="pin_class_select")
-            pin_class_cfg = get_class_config(ss_name, pin_selected_class)
-            pin_student_count = int(pin_class_cfg.get("student_count", 0))
-
-            talky_sheet_id = st.session_state.get("talky_sheet_id", "")
-            pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")
-
-            if not pepper:
-                st.error("この学校のschool_pepperがsecretsに設定されていません。管理者に設定を依頼してください。")
-            elif pin_student_count == 0:
-                st.warning("このクラスのstudent_countが0です。「🏫 クラス設定」タブで人数を設定してください。")
+            if not class_list_for_pin:
+                st.warning("クラス設定が見つかりません。「🏫 クラス設定」タブでクラスを登録してください。")
             else:
-                pin_rows = [
-                    {
-                        "出席番号": n,
-                        "氏名": get_student_name(ss_name, pin_selected_class, n),
-                        "PIN": generate_pin(talky_sheet_id, pin_selected_class, n, pepper),
-                    }
-                    for n in range(1, pin_student_count + 1)
-                ]
-                st.dataframe(pd.DataFrame(pin_rows), hide_index=True, use_container_width=True)                    
-                st.caption("この一覧を印刷・配布してください。PINは学校・クラス・出席番号ごとに固定です（school_pepperを変更しない限り変わりません）。")
+                pin_selected_class = st.selectbox("クラスを選択してください：", class_list_for_pin, key="pin_class_select")
+                pin_class_cfg = get_class_config(ss_name, pin_selected_class)
+                pin_student_count = int(pin_class_cfg.get("student_count", 0))
+
+                talky_sheet_id = st.session_state.get("talky_sheet_id", "")
+                pepper = st.secrets.get("school_pepper", {}).get(talky_sheet_id, "")
+
+                if not pepper:
+                    st.error("この学校のschool_pepperがsecretsに設定されていません。管理者に設定を依頼してください。")
+                elif pin_student_count == 0:
+                    st.warning("このクラスのstudent_countが0です。「🏫 クラス設定」タブで人数を設定してください。")
+                else:
+                    pin_rows = [
+                        {
+                            "出席番号": n,
+                            "氏名": get_student_name(ss_name, pin_selected_class, n),
+                            "PIN": generate_pin(talky_sheet_id, pin_selected_class, n, pepper),
+                        }
+                        for n in range(1, pin_student_count + 1)
+                    ]
+                    st.dataframe(pd.DataFrame(pin_rows), hide_index=True, use_container_width=True)
+                    st.caption("この一覧を印刷・配布してください。PINは学校・クラス・出席番号ごとに固定です（school_pepperを変更しない限り変わりません）。")
 
     # 🎙️⌨️ 生徒用画面
     else:
